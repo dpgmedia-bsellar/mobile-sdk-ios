@@ -63,6 +63,7 @@ let package = Package(
             name: "GoogleMediationAdapter",
             dependencies: ["AppNexusSDK","GoogleMobileAds"],
             path: "mediation/mediatedviews/GoogleAdMob",
+            publicHeadersPath: "./public-headers",		
             cSettings: [
                 .headerSearchPath("./"),
             ]
