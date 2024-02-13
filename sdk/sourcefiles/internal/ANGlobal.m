@@ -51,7 +51,7 @@ NSMutableURLRequest  *utDefaultDomainMutableRequest = nil;
 NSMutableURLRequest  *utSimpleDomainMutableRequest = nil;
 
 NSString *anUserAgent = nil;
-WKWebView  *webViewForUserAgent = nil;
+static BOOL userAgentQueryIsActive  = NO;
 
 
 NSString *__nonnull ANDeviceModel()
@@ -196,15 +196,12 @@ CGRect ANPortraitScreenBounds() {
 }
 
 CGRect ANPortraitScreenBoundsApplyingSafeAreaInsets() {
-    CGRect screenBounds = [UIScreen mainScreen].bounds;
     UIWindow *window = [ANGlobal getKeyWindow];
-    if (@available(iOS 11.0, *)) {
-        CGFloat topPadding = window.safeAreaInsets.top;
-        CGFloat bottomPadding = window.safeAreaInsets.bottom;
-        CGFloat leftPadding = window.safeAreaInsets.left;
-        CGFloat rightPadding = window.safeAreaInsets.right;
-        screenBounds = CGRectMake(leftPadding, topPadding, screenBounds.size.width - (leftPadding + rightPadding), screenBounds.size.height - (topPadding + bottomPadding));
-    }
+    CGFloat topPadding = window.safeAreaInsets.top;
+    CGFloat bottomPadding = window.safeAreaInsets.bottom;
+    CGFloat leftPadding = window.safeAreaInsets.left;
+    CGFloat rightPadding = window.safeAreaInsets.right;
+    CGRect screenBounds = CGRectMake(leftPadding, topPadding, screenBounds.size.width - (leftPadding + rightPadding), screenBounds.size.height - (topPadding + bottomPadding));
     if (ANStatusBarOrientation() != UIInterfaceOrientationPortrait) {
         if (!CGPointEqualToPoint(screenBounds.origin, CGPointZero) || screenBounds.size.width > screenBounds.size.height) {
             // need to orient screen bounds
@@ -249,6 +246,7 @@ BOOL ANStatusBarHidden(){
     return statusBarHidden;
 }
 
+
 UIInterfaceOrientation ANStatusBarOrientation()
 {
     UIInterfaceOrientation statusBarOrientation;
@@ -272,6 +270,10 @@ UIInterfaceOrientation ANStatusBarOrientation()
     return statusBarOrientation;
 }
 #endif
+
+
+
+
 
 NSString *__nonnull ANErrorString( NSString * __nonnull key) {
     return NSLocalizedStringFromTableInBundle(key, AN_ERROR_TABLE, ANResourcesBundle(), @"");
@@ -391,14 +393,10 @@ NSNumber * __nullable ANiTunesIDForURL(NSURL * __nonnull URL) {
 
 + (void) openURL: (nonnull NSString *)urlString
 {
-    
-    if (@available(iOS 10.0, *)) {
-        if([[UIApplication sharedApplication] respondsToSelector:@selector(openURL:options:completionHandler:)]){
-            [[UIApplication sharedApplication] openURL:[NSURL URLWithString:urlString] options:@{} completionHandler:nil];
-            return;
-        }
+    if([[UIApplication sharedApplication] respondsToSelector:@selector(openURL:options:completionHandler:)]){
+        [[UIApplication sharedApplication] openURL:[NSURL URLWithString:urlString] options:@{} completionHandler:nil];
+        return;
     }
-    [[UIApplication sharedApplication] openURL:[NSURL URLWithString:urlString]];
 }
 
 
@@ -529,9 +527,10 @@ NSNumber * __nullable ANiTunesIDForURL(NSURL * __nonnull URL) {
     ANLogError(@"UNRECOGNIZED adTypeString.  (%@)", adTypeString);
     return  ANAdTypeUnknown;
 }
+
+
 + (void) getUserAgent
 {
-    static BOOL       userAgentQueryIsActive  = NO;
     
     // Return customUserAgent if provided
     NSString *customUserAgent = ANSDKSettings.sharedInstance.customUserAgent;
@@ -550,26 +549,16 @@ NSNumber * __nullable ANiTunesIDForURL(NSURL * __nonnull URL) {
             dispatch_async(dispatch_get_main_queue(),
                            ^{
                 @try {
-                    webViewForUserAgent  = [[WKWebView alloc] initWithFrame:CGRectZero];;
-                    [webViewForUserAgent evaluateJavaScript: @"navigator.userAgent"
-                                          completionHandler: ^(id __nullable userAgentString, NSError * __nullable error)
-                     {
-                        if (error != nil) {
-                            [[NSNotificationCenter defaultCenter] postNotificationName:@"kUserAgentFailedToChangeNotification" object:nil userInfo:nil];
-                            ANLogError(@"%@ error: %@", NSStringFromSelector(_cmd), error);
-                        } else if ([userAgentString isKindOfClass:NSString.class]) {
-                            ANLogDebug(@"userAgentString=%@", userAgentString);
-                            anUserAgent = userAgentString;
-                            [[NSNotificationCenter defaultCenter] postNotificationName:@"kUserAgentDidChangeNotification" object:nil userInfo:nil];
-                            @synchronized (self) {
-                                userAgentQueryIsActive = NO;
-                            }
-                        }
-                        webViewForUserAgent = nil;
-                    }];
+                    anUserAgent = [[[WKWebView alloc] init] valueForKey:@"userAgent"];
+                    ANLogDebug(@"userAgent=%@", anUserAgent);
+                    [[NSNotificationCenter defaultCenter] postNotificationName:@"kUserAgentDidChangeNotification" object:nil userInfo:nil];
+                    @synchronized (self) {
+                        userAgentQueryIsActive = NO;
+                    }
                 }
                 @catch (NSException *exception) {
                     ANLogError(@"Failed to fetch UserAgent with exception  (%@)", exception);
+                    [[NSNotificationCenter defaultCenter] postNotificationName:@"kUserAgentFailedToChangeNotification" object:nil userInfo:nil];
                 }
                 
             });
@@ -587,6 +576,7 @@ NSNumber * __nullable ANiTunesIDForURL(NSURL * __nonnull URL) {
 }
 
 
+
 #pragma mark - Get Video Orientation Method
 
 + (ANVideoOrientation) parseVideoOrientation:(NSString *)aspectRatio {
@@ -596,20 +586,16 @@ NSNumber * __nullable ANiTunesIDForURL(NSURL * __nonnull URL) {
 
 + (void) setWebViewCookie:(nonnull WKWebView*)webView{
     if([ANGDPRSettings canAccessDeviceData] && !ANSDKSettings.sharedInstance.doNotTrack){
-         
-         for (NSHTTPCookie *cookie in [[NSHTTPCookieStorage sharedHTTPCookieStorage] cookies]) {
-             // Skip cookies that will break our script
-             if ([cookie.value rangeOfString:@"'"].location != NSNotFound) {
-                 continue;
-             }
-             if (@available(iOS 11.0, *)) {
-                 [webView.configuration.websiteDataStore.httpCookieStore setCookie:cookie completionHandler:nil];
-             } else {
-                 // Fallback on earlier versions
-                 [[NSHTTPCookieStorage sharedHTTPCookieStorage] setCookie:cookie];
-             }
-         }
-     }
+        
+        for (NSHTTPCookie *cookie in [[NSHTTPCookieStorage sharedHTTPCookieStorage] cookies]) {
+            // Skip cookies that will break our script
+            if ([cookie.value rangeOfString:@"'"].location != NSNotFound) {
+                continue;
+            }
+            [webView.configuration.websiteDataStore.httpCookieStore setCookie:cookie completionHandler:nil];
+            
+        }
+    }
 }
 
 + (void) setANCookieToRequest:(nonnull NSMutableURLRequest *)request {
