@@ -23,10 +23,7 @@
 #import "ANLogging.h"
 #import "ANGDPRSettings.h"
 #import "ANAdConstants.h"
-#import <AdSupport/AdSupport.h>
-#if !APPNEXUS_NATIVE_MACOS_SDK
-#import <AppTrackingTransparency/AppTrackingTransparency.h>
-#endif
+
 
 @interface ANBaseUrlConfig : NSObject
 //EMPTY
@@ -45,11 +42,6 @@
 }
 
 - (NSString *)webViewBaseUrl {
-#if !APPNEXUS_NATIVE_MACOS_SDK
-    if(!ANAdvertisingTrackingEnabled()){
-        return @"https://ib.adnxs-simple.com/";
-    }
-#endif
     if(ANGDPRSettings.canAccessDeviceData == NO || ANSDKSettings.sharedInstance.doNotTrack == YES){
         return @"https://ib.adnxs-simple.com/";
     }
@@ -57,11 +49,6 @@
 }
 
 -(NSString *) utAdRequestBaseUrl {
-#if !APPNEXUS_NATIVE_MACOS_SDK
-    if(!ANAdvertisingTrackingEnabled()){
-        return @"https://ib.adnxs-simple.com/ut/v3";
-    }
-#endif
     if(ANGDPRSettings.canAccessDeviceData == NO || ANSDKSettings.sharedInstance.doNotTrack == YES){
         return @"https://ib.adnxs-simple.com/ut/v3";
     }
